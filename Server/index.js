@@ -1,4 +1,4 @@
-require('dotenv').config(); // Loads variables from .env into process.env
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -11,21 +11,23 @@ app.use(cors());
 app.use(express.json());
 
 // 2. CONFIGURATION & AI SETUP
-// All sensitive data is now pulled from process.env
 const MONGO_URI = process.env.MONGO_URI;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // Initialize Groq Client
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 
-// 3. MONGODB CONNECTION
-if (!MONGO_URI) {
-    console.error("❌ Error: MONGO_URI is missing in .env file");
-} else {
-    mongoose.connect(MONGO_URI)
-        .then(() => console.log("✅ Connected to MongoDB Atlas"))
-        .catch(err => console.error("❌ MongoDB Connection Error:", err));
-}
+// 3. DATABASE CONNECTION (Optimized for Serverless)
+const connectDB = async () => {
+    if (mongoose.connection.readyState >= 1) return;
+    
+    try {
+        await mongoose.connect(MONGO_URI);
+        console.log("✅ Connected to MongoDB Atlas");
+    } catch (err) {
+        console.error("❌ MongoDB Connection Error:", err.message);
+    }
+};
 
 // 4. SCHEMA & MODEL
 const CorrectionSchema = new mongoose.Schema({
@@ -35,15 +37,23 @@ const CorrectionSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
-const Correction = mongoose.model('Correction', CorrectionSchema);
+// Avoid re-compiling the model if it already exists
+const Correction = mongoose.models.Correction || mongoose.model('Correction', CorrectionSchema);
 
 // 5. ROUTES
 
 /**
+ * Root Route (Prevents 404 on home page)
+ */
+app.get('/', (req, res) => {
+    res.json({ status: "API is operational", service: "Grammarly Clone" });
+});
+
+/**
  * AI Correction Route
- * Processes text using Groq's Llama 3.3 70B model
  */
 app.post('/api/correct', async (req, res) => {
+    await connectDB(); // Ensure DB is connected
     const { sentence, tone = 'professional' } = req.body;
     
     if (!sentence) return res.status(400).json({ error: "No sentence provided" });
@@ -72,7 +82,7 @@ app.post('/api/correct', async (req, res) => {
         await newEntry.save();
         res.json(newEntry);
     } catch (error) {
-        console.error("Groq AI Error:", error);
+        console.error("Groq AI Error:", error.message);
         res.status(500).json({ error: 'AI processing failed' });
     }
 });
@@ -81,11 +91,12 @@ app.post('/api/correct', async (req, res) => {
  * Fetch History Route
  */
 app.get('/api/history', async (req, res) => {
+    await connectDB();
     try {
         const history = await Correction.find().sort({ createdAt: -1 }).limit(15);
         res.json(history);
     } catch (error) {
-        console.error("Fetch Error:", error);
+        console.error("Fetch Error:", error.message);
         res.status(500).json({ error: 'Fetch failed' });
     }
 });
@@ -94,6 +105,7 @@ app.get('/api/history', async (req, res) => {
  * Clear History Route
  */
 app.delete('/api/history', async (req, res) => {
+    await connectDB();
     try {
         const result = await Correction.deleteMany({});
         res.status(200).json({ 
@@ -101,7 +113,7 @@ app.delete('/api/history', async (req, res) => {
             count: result.deletedCount 
         });
     } catch (error) {
-        console.error("❌ Clear failed:", error);
+        console.error("❌ Clear failed:", error.message);
         res.status(500).json({ error: 'Database clear failed' });
     }
 });
