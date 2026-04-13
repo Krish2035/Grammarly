@@ -4,12 +4,11 @@ import { Sparkles, Copy, Check, Trash2, ArrowRight } from 'lucide-react';
 import * as diff from 'diff';
 import { Toaster, toast } from 'react-hot-toast';
 
-// Update this to your backend URL
-const API_BASE_URL = 'http://localhost:5000/api';
+// PRODUCTION READY: Uses Environment Variable from Vercel, defaults to localhost for local dev
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 // Component to visualize grammar changes
 const DiffViewer = ({ oldText, newText }) => {
-  // Memoize changes to prevent unnecessary calculations on every re-render
   const changes = useMemo(() => diff.diffWords(oldText, newText), [oldText, newText]);
   
   return (
@@ -41,13 +40,15 @@ function App() {
 
   const tones = ['professional', 'casual', 'academic', 'friendly'];
 
+  // Clean the URL to ensure no double slashes or missing /api
+  const getUrl = (endpoint) => `${API_BASE_URL.replace(/\/$/, "")}/${endpoint}`;
+
   const fetchHistory = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/history`);
+      const res = await axios.get(getUrl('history'));
       setHistory(res.data);
     } catch (err) {
       console.error("Backend Connection Error:", err.message);
-      // Silent fail for background fetch, or show a subtle warning
     }
   };
 
@@ -59,14 +60,14 @@ function App() {
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/correct`, { 
+      const response = await axios.post(getUrl('correct'), { 
         sentence: text, 
         tone 
       });
       
       setResult(response.data.correctedText);
       setLastProcessedText(text);
-      fetchHistory(); // Refresh history after new entry
+      fetchHistory(); 
       toast.success('Writing Refined');
     } catch (err) {
       toast.error(err.response?.data?.message || "AI Server Offline");
@@ -77,18 +78,15 @@ function App() {
 
   const handleClearHistory = async () => {
     if (history.length === 0) return;
-    
-    // User confirmation before clearing data
     if (!window.confirm("Are you sure you want to clear all archived records?")) return;
     
     try {
-      // Ensure the backend has a DELETE route for /api/history
-      await axios.delete(`${API_BASE_URL}/history`);
+      await axios.delete(getUrl('history'));
       setHistory([]); 
       toast.success('Archive cleared', { icon: '🗑️' });
     } catch (err) {
       console.error("Delete Error:", err);
-      toast.error("Failed to clear history. Check backend route.");
+      toast.error("Failed to clear history.");
     }
   };
 
@@ -118,7 +116,7 @@ function App() {
           <div className="flex items-center gap-2 px-4 py-1.5 bg-zinc-900 rounded-full border border-zinc-800">
             <Sparkles size={14} className="text-indigo-400" />
             <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">
-              Local Intelligence • MERN Stack
+              AI Intelligence • MERN Stack
             </span>
           </div>
           <h1 className="text-5xl font-black text-white">
